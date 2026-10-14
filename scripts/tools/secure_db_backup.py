@@ -79,7 +79,9 @@ def _create_secure_cnf(creds: Dict[str, Any]) -> str:
 
     tmp_file.write("[client]\n")
     tmp_file.write(f"user={creds.get('user', 'root')}\n")
-    tmp_file.write(f"password={creds.get('password', '')}\n")
+    # Thoát các ký tự đặc biệt trong password phòng trường hợp có dấu ngoặc kép hoặc backslash
+    pwd = str(creds.get("password", "")).replace("\\", "\\\\").replace('"', '\\"')
+    tmp_file.write(f'password="{pwd}"\n')
 
     if creds.get("socket") and os.path.exists(creds["socket"]):
         tmp_file.write(f"socket={creds['socket']}\n")
@@ -132,7 +134,9 @@ def backup_databases(
                 db_name
             ]
 
-            with open(out_path, "w", encoding="utf-8") as out_f:
+            # Tạo file với quyền 0600 nguyên tử ngay từ thời điểm tạo (loại bỏ hoàn toàn race-condition hở quyền)
+            fd = os.open(out_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with open(fd, "w", encoding="utf-8") as out_f:
                 proc = subprocess.run(
                     cmd,
                     stdout=out_f,
@@ -166,7 +170,8 @@ def restore_databases(
     creds_path: str = DEFAULT_CREDS_PATH,
     backup_dir: str = DEFAULT_BACKUP_DIR,
     tag: Optional[str] = None,
-    specific_file: Optional[str] = None
+    specific_file: Optional[str] = None,
+    force: bool = False
 ) -> Dict[str, Any]:
     """
     Khôi phục cơ sở dữ liệu từ file backup SQL an toàn.
@@ -183,6 +188,8 @@ def restore_databases(
                 raise FileNotFoundError(f"Không tìm thấy file: {specific_file}")
             files_to_restore.append(specific_file)
         else:
+            if not os.path.exists(backup_dir):
+                return {"ok": False, "restored_files": [], "errors": [f"Thư mục backup không tồn tại: {backup_dir}"]}
             # Tìm file backup gần nhất cho từng database
             for db_name in creds["databases"]:
                 prefix = f"{tag}_{db_name}_" if tag else f"{db_name}_"
@@ -213,18 +220,18 @@ def restore_databases(
         print(f"\n  Các CSDL sẽ bị XÓA SẠCH và ghi đè: {creds['databases']}")
         print("=" * 70)
 
-        # Kiểm tra môi trường có hỗ trợ interactive input không (không chạy trong pipe)
-        import sys
-        if not sys.stdin.isatty():
-            raise RuntimeError(
-                "Restore từ chối chạy trong chế độ non-interactive (pipe/cron). "
-                "Chạy thủ công từ terminal để được hỏi xác nhận an toàn."
-            )
+        if not force:
+            # Kiểm tra môi trường có hỗ trợ interactive input không
+            if not sys.stdin.isatty():
+                raise RuntimeError(
+                    "Restore từ chối chạy trong chế độ non-interactive (pipe/cron). "
+                    "Chạy thủ công từ terminal hoặc truyền thêm cờ --yes/-y để bỏ qua cảnh báo."
+                )
 
-        confirm = input("\n  Bạn có chắc chắn muốn RESTORE và GHI ĐÈ toàn bộ CSDL? [y/N]: ").strip().lower()
-        if confirm not in ("y", "yes"):
-            print("  [HỦY BỎ] Thao tác restore đã được hủy theo yêu cầu người dùng.")
-            return {"ok": False, "restored_files": [], "errors": ["Hủy bởi người dùng"]}
+            confirm = input("\n  Bạn có chắc chắn muốn RESTORE và GHI ĐÈ toàn bộ CSDL? [y/N]: ").strip().lower()
+            if confirm not in ("y", "yes"):
+                print("  [HỦY BỎ] Thao tác restore đã được hủy theo yêu cầu người dùng.")
+                return {"ok": False, "restored_files": [], "errors": ["Hủy bởi người dùng"]}
 
         for sql_path in files_to_restore:
             with open(sql_path, "r", encoding="utf-8") as in_f:
@@ -303,6 +310,11 @@ def main() -> None:
         default=None,
         help="Đường dẫn cụ thể file SQL cần restore"
     )
+    parser.add_argument(
+        "--yes", "-y",
+        action="store_true",
+        help="Bỏ qua cảnh báo xác nhận khi restore (dùng cho automated script)"
+    )
 
     args = parser.parse_args()
 
@@ -323,7 +335,8 @@ def main() -> None:
             creds_path=args.creds,
             backup_dir=args.dir,
             tag=args.tag,
-            specific_file=args.file
+            specific_file=args.file,
+            force=args.yes
         )
         print(json.dumps(res, indent=2, ensure_ascii=False))
         sys.exit(0 if res["ok"] else 1)

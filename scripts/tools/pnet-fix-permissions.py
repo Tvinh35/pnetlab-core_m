@@ -253,28 +253,66 @@ def main() -> None:
         )
         print(f"  {C_GREEN}[✔]{C_RESET} Đã chuẩn hóa {p_dirs} thư mục, {p_files} tệp trong /opt/unetlab/plugins/")
 
-    # 4. Bảo vệ tệp nhạy cảm
+    # 4. Chuẩn hóa /opt/unetlab/labs/ và dọn dẹp lock rác
+    if os.path.exists("/opt/unetlab/labs"):
+        print(f"[*] Đang chuẩn hóa thư mục bài lab /opt/unetlab/labs/...")
+        l_dirs, l_files = fix_tree_permissions(
+            "/opt/unetlab/labs",
+            user="www-data",
+            group="www-data",
+            dir_mode=0o775,
+            file_mode=0o664
+        )
+        # Dọn sạch các file lock rác mồ côi (*.lock, *.lock.flock)
+        cleaned_locks = 0
+        for pattern in ("/opt/unetlab/labs/*.lock", "/opt/unetlab/labs/*.lock.flock"):
+            for lock_f in glob.glob(pattern):
+                try:
+                    os.unlink(lock_f)
+                    cleaned_locks += 1
+                except OSError:
+                    pass
+        print(f"  {C_GREEN}[✔]{C_RESET} Đã chuẩn hóa {l_dirs} thư mục, {l_files} tệp trong /opt/unetlab/labs/ (đã giải phóng {cleaned_locks} lock rác).")
+
+    # 5. Chuẩn hóa /opt/unetlab/addons/ và /opt/unetlab/users/
+    if os.path.exists("/opt/unetlab/addons"):
+        fix_tree_permissions("/opt/unetlab/addons", user="root", group="root", dir_mode=0o755, file_mode=0o644)
+    if os.path.exists("/opt/unetlab/users"):
+        uid_root, gid_unl = get_user_group_ids("root", "unl")
+        fix_tree_permissions("/opt/unetlab/users", user="root", group="unl", dir_mode=0o2775, file_mode=0o664)
+
+    # 6. Bảo vệ tệp nhạy cảm
     print(f"[*] Đang kiểm tra và siết chặt các tệp cấu hình bảo mật...")
     sec_msgs = secure_protected_assets()
     for m in sec_msgs:
         print(f"  {C_GREEN}[✔]{C_RESET} {m}")
 
-    # 5. Khởi tạo runtime dir
+    # 7. Khởi tạo runtime dir
     print(f"[*] Đang kiểm tra thư mục runtime /run/pnetlab/...")
     run_msg = setup_runtime_dir()
     print(f"  {C_GREEN}[✔]{C_RESET} {run_msg}")
 
-    # 6. Dọn sạch cache IP bị chặn
+    # 8. Dọn sạch cache IP bị chặn
     print(f"[*] Đang dọn sạch cache khóa IP đăng nhập...")
     cleaned_auth = clean_auth_fail_cache()
     print(f"  {C_GREEN}[✔]{C_RESET} Đã dọn sạch {cleaned_auth} bản ghi khóa IP tại /dev/shm/pnet-authfail/")
 
-    # 7. Cấp quyền thực thi
-    print(f"[*] Đang cấp quyền thực thi (+x) cho các script quản trị và wrappers...")
+    # 9. Cấp quyền thực thi và bảo đảm Linux Capabilities cho wrappers
+    print(f"[*] Đang cấp quyền thực thi (+x) và Linux capabilities cho wrappers...")
     execs = fix_executables()
     print(f"  {C_GREEN}[✔]{C_RESET} Đã cấp quyền thực thi cho {execs} script hệ thống.")
 
-    # 8. Chuẩn hóa vùng runtime node /opt/unetlab/tmp/ và /tmp/netio (chống lỗi start node NETMAP access)
+    # Bảo đảm capability cap_net_admin=ep cho iol_wrapper (Cisco IOL switch/router bắt buộc)
+    iol_wrapper_path = "/opt/unetlab/wrappers/iol_wrapper"
+    if os.path.exists(iol_wrapper_path):
+        import subprocess
+        try:
+            subprocess.run(["setcap", "cap_net_admin=ep", iol_wrapper_path], check=True, stderr=subprocess.DEVNULL)
+            print(f"  {C_GREEN}[✔]{C_RESET} Đã bảo đảm Linux capability cap_net_admin=ep cho {iol_wrapper_path}")
+        except Exception as exc:
+            print(f"  {C_YELLOW}[⚠]{C_RESET} Cảnh báo: Không thể setcap cho {iol_wrapper_path}: {exc}")
+
+    # 10. Chuẩn hóa vùng runtime node /opt/unetlab/tmp/ và /tmp/netio (chống lỗi start node NETMAP access)
     # QUAN TRỌNG: phải dùng 0o2777 (SetGID + Sticky) thay vì 0o1777 (chỉ Sticky).
     # SetGID bit đảm bảo các file/socket được tạo bên trong tmp luôn kế thừa group `unl`,
     # cho phép các tiến trình QEMU/IOL chạy dưới các UID unl1, unl2,... truy cập socket

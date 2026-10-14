@@ -27,14 +27,21 @@ _LABS_DIR = "/opt/unetlab/labs"
 
 
 def _find_test_lab() -> str:
-    """Tìm file .unl phù hợp để chạy test. Ưưu tiên 12.unl."""
+    """
+    Tìm hoặc khởi tạo bài lab mẫu an toàn (0 node) để chạy test start/stop.
+    Tuyệt đối không chạy test trên lab của người dùng thực tế nhằm tránh
+    ngắt kết nối hoặc tiêu tốn tài nguyên hệ thống.
+    """
     if os.path.exists(_PREFERRED_LAB):
         return _PREFERRED_LAB
-    # Dự phòng: tìm file .unl đầu tiên trong labs/ (bỏ qua abs.unl - file rác test)
+    # Nếu 12.unl không có, tạo một file lab mẫu tối giản an toàn (0 node)
+    dummy_lab = os.path.join(_LABS_DIR, "safety_net_dummy.unl")
     try:
-        for fname in sorted(os.listdir(_LABS_DIR)):
-            if fname.endswith(".unl") and fname != "abs.unl" and not fname.endswith(".lock.flock"):
-                return os.path.join(_LABS_DIR, fname)
+        if not os.path.exists(dummy_lab):
+            with open(dummy_lab, "w", encoding="utf-8") as f:
+                f.write('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+                        '<lab name="safety_net_dummy" id="00000000-0000-0000-0000-000000000001" version="1"/>\n')
+        return dummy_lab
     except OSError:
         pass
     return ""  # Trả về chuỗi rỗng => test sẽ bị skip
@@ -239,13 +246,27 @@ class TestBrokerSocketSafetyNet(unittest.TestCase):
             self.skipTest("Kernel không có KSM sysfs (/sys/kernel/mm/ksm/run) — bỏ qua kiểm tra KSM")
 
         # 3. Điều khiển CPU Limit (cpulimiton/cpulimitoff)
-        res_cpu_on = self.client.call("wrapper", {"action": "cpulimiton"})
-        self._assert_schema(res_cpu_on)
-        self.assertEqual(res_cpu_on["rc"], 0, "cpulimiton thất bại")
+        # Lưu lại trạng thái CPU limit ban đầu để khôi phục trong finally
+        orig_cpu_limit = "disabled"
+        try:
+            status_res = self.client.call("qemu_cpu_policy_status")
+            if status_res.get("ok") and status_res.get("out"):
+                orig_cpu_limit = status_res["out"][0]
+        except Exception:
+            pass
 
-        res_cpu_off = self.client.call("wrapper", {"action": "cpulimitoff"})
-        self._assert_schema(res_cpu_off)
-        self.assertEqual(res_cpu_off["rc"], 0, "cpulimitoff thất bại")
+        try:
+            res_cpu_on = self.client.call("wrapper", {"action": "cpulimiton"})
+            self._assert_schema(res_cpu_on)
+            self.assertEqual(res_cpu_on["rc"], 0, "cpulimiton thất bại")
+
+            res_cpu_off = self.client.call("wrapper", {"action": "cpulimitoff"})
+            self._assert_schema(res_cpu_off)
+            self.assertEqual(res_cpu_off["rc"], 0, "cpulimitoff thất bại")
+        finally:
+            # QUAN TRỌNG: Khôi phục trạng thái CPU limit ban đầu
+            restore_cpu_act = "cpulimiton" if orig_cpu_limit == "enabled" else "cpulimitoff"
+            self.client.call("wrapper", {"action": restore_cpu_act})
 
 
 if __name__ == "__main__":

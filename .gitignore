@@ -12,6 +12,8 @@ tmp/*
 *.log
 *.pid
 /run/pnetlab/*
+/ksm
+/cpulimit
 
 # User Labs cá nhân thử nghiệm
 labs/test_*

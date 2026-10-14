@@ -231,8 +231,8 @@ def check_permissions() -> List[HealthCheckResult]:
     else:
         results.append(HealthCheckResult("Quyền /opt/unetlab/tmp", "FAIL", "Không tồn tại", "sudo mkdir -p /opt/unetlab/tmp && sudo chmod 2777 /opt/unetlab/tmp"))
 
-    # 2. Kiểm tra quyền sở hữu www-data cho thư mục Web
-    for web_dir in ("/opt/unetlab/html", "/opt/unetlab/data"):
+    # 2. Kiểm tra quyền sở hữu www-data cho các thư mục chính (html, data, labs)
+    for web_dir in ("/opt/unetlab/html", "/opt/unetlab/data", "/opt/unetlab/labs"):
         if os.path.exists(web_dir):
             if _check_dir_owner(web_dir, "www-data"):
                 results.append(HealthCheckResult(f"Quyền sở hữu {os.path.basename(web_dir)}/", "PASS", f"Thuộc sở hữu www-data (chuẩn)"))
@@ -249,7 +249,24 @@ def check_permissions() -> List[HealthCheckResult]:
                     f"sudo python3 scripts/tools/pnet-fix-permissions.py"
                 ))
 
-    # 3. Kiểm tra bảo mật file dbcreds.json
+    # 3. Kiểm tra Linux capabilities cho Cisco IOL wrapper (cap_net_admin=ep)
+    iol_wrapper = "/opt/unetlab/wrappers/iol_wrapper"
+    if os.path.exists(iol_wrapper):
+        try:
+            p_cap = subprocess.run(["getcap", iol_wrapper], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            if "cap_net_admin" in p_cap.stdout:
+                results.append(HealthCheckResult("IOL Wrapper Capability", "PASS", "iol_wrapper có cap_net_admin=ep (Cisco IOL sẵn sàng)"))
+            else:
+                results.append(HealthCheckResult(
+                    "IOL Wrapper Capability",
+                    "WARN",
+                    "iol_wrapper thiếu cap_net_admin=ep (Cisco IOL không tạo được NIC)",
+                    f"sudo setcap cap_net_admin=ep {iol_wrapper}"
+                ))
+        except Exception as exc:
+            results.append(HealthCheckResult("IOL Wrapper Capability", "WARN", f"Không thể kiểm tra getcap: {exc}"))
+
+    # 4. Kiểm tra bảo mật file dbcreds.json
     creds_path = "/opt/unetlab/data/dbcreds.json"
     if os.path.exists(creds_path):
         mode = oct(os.stat(creds_path).st_mode)[-4:]
@@ -301,7 +318,9 @@ def check_database() -> HealthCheckResult:
         os.chmod(tmp_f.name, 0o600)
         tmp_f.write("[client]\n")
         tmp_f.write(f"user={creds.get('user', 'root')}\n")
-        tmp_f.write(f"password={creds.get('password', '')}\n")
+        # Thoát các ký tự đặc biệt trong password phòng trường hợp có dấu ngoặc kép hoặc backslash
+        pwd = str(creds.get('password', '')).replace('\\', '\\\\').replace('"', '\\"')
+        tmp_f.write(f'password="{pwd}"\n')
         if creds.get("socket") and os.path.exists(str(creds["socket"])):
             tmp_f.write(f"socket={creds['socket']}\n")
         elif creds.get("host"):
