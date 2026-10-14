@@ -3567,17 +3567,39 @@ $app->post("/api/auth", function () use ($app) {
         // brick login. Try the full SELECT; on any failure retry without
         // ext_auth and treat it as absent (NULL => the local-hash path below).
         try {
-            $st = $db->prepare("SELECT pod,username,password,role,user_status,active_time,expired_time,access_days,ext_auth FROM users WHERE username = :u");
+            $st = $db->prepare("SELECT pod,username,password,role,user_status,active_time,expired_time,access_days,ext_auth FROM users WHERE LOWER(username) = LOWER(:u)");
             $st->bindParam(":u",$username,PDO::PARAM_STR);
             $selOk = $st->execute();
         } catch (PDOException $e) {
             $selOk = false;
         }
         if (!$selOk) {
-            $st = $db->prepare("SELECT pod,username,password,role,user_status,active_time,expired_time,access_days FROM users WHERE username = :u");
+            $st = $db->prepare("SELECT pod,username,password,role,user_status,active_time,expired_time,access_days FROM users WHERE LOWER(username) = LOWER(:u)");
             $st->bindParam(":u",$username,PDO::PARAM_STR); $st->execute();
         }
         $u = $st->fetch(PDO::FETCH_ASSOC);
+
+        // Fallback alias: If no user found and username is 'pnet' or 'root', alias to 'admin'
+        // This solves the common issue where users expect appliance/OS username 'pnet' or 'root'
+        if (!$u && in_array(strtolower($username), ['pnet', 'root'], true)) {
+            try {
+                $stAlias = $db->prepare("SELECT pod,username,password,role,user_status,active_time,expired_time,access_days,ext_auth FROM users WHERE LOWER(username) = 'admin'");
+                $aliasOk = $stAlias->execute();
+            } catch (PDOException $e) {
+                $aliasOk = false;
+            }
+            if (!$aliasOk) {
+                $stAlias = $db->prepare("SELECT pod,username,password,role,user_status,active_time,expired_time,access_days FROM users WHERE LOWER(username) = 'admin'");
+                $stAlias->execute();
+            }
+            $uAlias = $stAlias->fetch(PDO::FETCH_ASSOC);
+            if ($uAlias) {
+                $u = $uAlias;
+            }
+        }
+        if ($u) {
+            $username = $u["username"];
+        }
         if ($u && !array_key_exists("ext_auth", $u)) { $u["ext_auth"] = null; }
 
         // Constant-ish time on the miss path: without this, "no such user"

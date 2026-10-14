@@ -1,6 +1,6 @@
 {
   "user": "root",
-  "password": "pnetlab",
+  "password": "YOUR_MYSQL_ROOT_PASSWORD_HERE",
   "databases": [
     "pnetlab_db",
     "guacdb"

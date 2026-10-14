@@ -275,25 +275,30 @@ def main() -> None:
     print(f"  {C_GREEN}[✔]{C_RESET} Đã cấp quyền thực thi cho {execs} script hệ thống.")
 
     # 8. Chuẩn hóa vùng runtime node /opt/unetlab/tmp/ và /tmp/netio (chống lỗi start node NETMAP access)
+    # QUAN TRỌNG: phải dùng 0o2777 (SetGID + Sticky) thay vì 0o1777 (chỉ Sticky).
+    # SetGID bit đảm bảo các file/socket được tạo bên trong tmp luôn kế thừa group `unl`,
+    # cho phép các tiến trình QEMU/IOL chạy dưới các UID unl1, unl2,... truy cập socket
+    # NETMAP của nhau. Thiếu SetGID sẽ gây lỗi "NETMAP access denied" khi start node.
     print(f"[*] Đang chuẩn hóa vùng runtime node (/opt/unetlab/tmp và /tmp/netio)...")
     try:
         os.makedirs("/opt/unetlab/tmp", exist_ok=True)
         uid_root, gid_unl = get_user_group_ids("root", "unl")
         os.chown("/opt/unetlab/tmp", uid_root, gid_unl)
-        os.chmod("/opt/unetlab/tmp", 0o1777)
+        # SetGID (2) + rwxrwxrwx (777) = 2777: kế thừa group unl cho node con
+        os.chmod("/opt/unetlab/tmp", 0o2777)
         for root_t, dirs_t, files_t in os.walk("/opt/unetlab/tmp"):
             for d in dirs_t:
                 dp = os.path.join(root_t, d)
                 os.chown(dp, uid_root, gid_unl)
-                os.chmod(dp, 0o777)
+                os.chmod(dp, 0o2777)
             for f in files_t:
                 fp = os.path.join(root_t, f)
                 os.chown(fp, uid_root, gid_unl)
-                os.chmod(fp, 0o777)
+                os.chmod(fp, 0o666)
 
         os.makedirs("/tmp/netio", exist_ok=True)
         os.chmod("/tmp/netio", 0o1777)
-        print(f"  {C_GREEN}[✔]{C_RESET} Vùng runtime node /opt/unetlab/tmp (root:unl 0777) và /tmp/netio đã sẵn sàng.")
+        print(f"  {C_GREEN}[✔]{C_RESET} Vùng runtime node /opt/unetlab/tmp (root:unl, mode 2777-SetGID) và /tmp/netio đã sẵn sàng.")
     except Exception as exc:
         print(f"  {C_RED}[✘]{C_RESET} Lỗi chuẩn hóa tmp: {exc}")
 

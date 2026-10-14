@@ -33,3 +33,18 @@ __pycache__/
 *.pyc
 html/vendor/
 html/composer.lock
+
+# =============================================================================
+# SECURITY SENSITIVE FILES - Không bao giờ commit các file sau vào Git
+# =============================================================================
+# Credentials CSDL (chứa mật khẩu root MySQL dạng plaintext)
+data/dbcreds.json
+# Bản dump SQL backup (có thể chứa toàn bộ dữ liệu người dùng)
+database_backup/*.sql
+database_backup/
+# File khóa lab tạm thời và lab rác khi test
+labs/*.lock.flock
+labs/abs.unl
+# PKI / TLS private keys
+data/extauth/
+data/pki/

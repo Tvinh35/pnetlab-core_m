@@ -196,6 +196,10 @@ def op_fixpermissions() -> Tuple[int, list[str], str]:
         if os.path.exists(tmp_dir):
             _safe_chown_tree(tmp_dir, "root", "unl")
             _safe_chmod_tree(tmp_dir, "777")
+            try:
+                os.chmod(tmp_dir, 0o2777)
+            except OSError:
+                pass
 
         # 5. /tmp
         try:

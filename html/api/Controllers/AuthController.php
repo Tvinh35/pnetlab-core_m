@@ -37,9 +37,16 @@ final class AuthController
             ]);
         }
 
-        $stmt = $this->db->prepare('SELECT pod, username, password, role, user_status FROM users WHERE username = :u LIMIT 1');
+        $stmt = $this->db->prepare('SELECT pod, username, password, role, user_status FROM users WHERE LOWER(username) = LOWER(:u) LIMIT 1');
         $stmt->execute([':u' => $username]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        // Fallback alias: If no user found and username is 'pnet' or 'root', alias to 'admin'
+        if (!$user && in_array(strtolower($username), ['pnet', 'root'], true)) {
+            $stmt = $this->db->prepare('SELECT pod, username, password, role, user_status FROM users WHERE LOWER(username) = \'admin\' LIMIT 1');
+            $stmt->execute();
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        }
 
         if (!$user || !password_verify($password, (string) $user['password'])) {
             // Also support legacy MD5/sha fallback if existing PNetLab accounts
@@ -59,7 +66,7 @@ final class AuthController
         $updateStmt->execute([
             ':c' => $token,
             ':s' => time(),
-            ':u' => $username,
+            ':u' => $user['username'],
         ]);
 
         return $this->json($response, 200, [

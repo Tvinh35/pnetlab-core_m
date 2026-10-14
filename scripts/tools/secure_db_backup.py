@@ -196,6 +196,36 @@ def restore_databases(
                 else:
                     errors.append(f"Không tìm thấy bản backup phù hợp cho CSDL: {db_name}")
 
+        if not files_to_restore:
+            return {"ok": False, "restored_files": [], "errors": errors}
+
+        # =====================================================================
+        # CẢNH BÁO: Bắt buộc xác nhận trước khi ghi đè CSDL
+        # Lệnh restore dùng --add-drop-table nên sẽ XÓA SẠCH dữ liệu hiện tại
+        # trước khi nạp lại từ file backup. Không có cơ hội hoàn tác.
+        # =====================================================================
+        print("\n" + "=" * 70)
+        print("  ⚠️  CẢNH BÁO: THAO TÁC RESTORE SẼ GHI ĐÈ DỮ LIỆU HIỆN TẠI!")
+        print("=" * 70)
+        print(f"  Các file sẽ được restore:")
+        for f in files_to_restore:
+            print(f"    - {f}")
+        print(f"\n  Các CSDL sẽ bị XÓA SẠCH và ghi đè: {creds['databases']}")
+        print("=" * 70)
+
+        # Kiểm tra môi trường có hỗ trợ interactive input không (không chạy trong pipe)
+        import sys
+        if not sys.stdin.isatty():
+            raise RuntimeError(
+                "Restore từ chối chạy trong chế độ non-interactive (pipe/cron). "
+                "Chạy thủ công từ terminal để được hỏi xác nhận an toàn."
+            )
+
+        confirm = input("\n  Bạn có chắc chắn muốn RESTORE và GHI ĐÈ toàn bộ CSDL? [y/N]: ").strip().lower()
+        if confirm not in ("y", "yes"):
+            print("  [HỦY BỎ] Thao tác restore đã được hủy theo yêu cầu người dùng.")
+            return {"ok": False, "restored_files": [], "errors": ["Hủy bởi người dùng"]}
+
         for sql_path in files_to_restore:
             with open(sql_path, "r", encoding="utf-8") as in_f:
                 proc = subprocess.run(

@@ -158,7 +158,7 @@ switch ($action) {
 		// /opt/unetlab/tmp
 		$cmd = '/bin/chown -R root:unl /opt/unetlab/tmp > /dev/null 2>&1';
 		exec($cmd, $o, $rc);
-		$cmd = '/bin/chmod -R g+w /opt/unetlab/tmp > /dev/null 2>&1';
+		$cmd = '/bin/chmod -R g+w /opt/unetlab/tmp > /dev/null 2>&1; /bin/chmod 2777 /opt/unetlab/tmp > /dev/null 2>&1';
 		exec($cmd, $o, $rc);
 
 		// /opt/unetlab/addons/iol/bin

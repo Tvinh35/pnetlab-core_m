@@ -33,7 +33,7 @@
 			modal_title: "Welcome Back",
 			modal_subtitle: "Enter credentials to unlock your workbench",
 			label_username: "Username",
-			ph_username: "admin",
+			ph_username: "admin or pnet",
 			label_password: "Password",
 			ph_password: "••••••••",
 			btn_forgot_pwd: "Forgot password?",
@@ -47,7 +47,7 @@
 			btn_send_reset: "Send reset link",
 			btn_return_login: "← Return to sign in",
 			err_fill_creds: "Enter your username and password.",
-			err_fail: "Invalid credentials.",
+			err_fail: "Invalid credentials (90002). Tip: Default account is admin / pnet (or pnet / pnet).",
 			err_unreachable: "Cannot reach the server. Check that the appliance is running.",
 			err_forgot_fill: "Enter your username or email address.",
 			msg_forgot_success: "A password reset link has been dispatched to your email."
@@ -70,7 +70,7 @@
 			modal_title: "Chào mừng trở lại",
 			modal_subtitle: "Nhập tài khoản để truy cập không gian làm việc",
 			label_username: "Tên đăng nhập",
-			ph_username: "admin",
+			ph_username: "admin hoặc pnet",
 			label_password: "Mật khẩu",
 			ph_password: "••••••••",
 			btn_forgot_pwd: "Quên mật khẩu?",
@@ -84,7 +84,7 @@
 			btn_send_reset: "Gửi liên kết khôi phục",
 			btn_return_login: "← Quay lại đăng nhập",
 			err_fill_creds: "Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.",
-			err_fail: "Tài khoản hoặc mật khẩu không chính xác.",
+			err_fail: "Tài khoản hoặc mật khẩu không chính xác (90002). Gợi ý: Tài khoản mặc định là admin / pnet (hoặc pnet / pnet).",
 			err_unreachable: "Không thể kết nối máy chủ. Vui lòng kiểm tra dịch vụ PNetLab.",
 			err_forgot_fill: "Vui lòng nhập tên đăng nhập hoặc email.",
 			msg_forgot_success: "Liên kết khôi phục mật khẩu đã được gửi đến email của bạn."
@@ -490,7 +490,13 @@
 				return;
 			}
 			setBusy(false);
-			showError((res.body && res.body.message) || dict.err_fail);
+			var errMsg = (res.body && res.body.message) || dict.err_fail;
+			if (res.status === 401 || (errMsg && errMsg.indexOf('90002') !== -1)) {
+				errMsg = dict.err_fail;
+				var da = document.getElementById('default-account');
+				if (da) da.hidden = false;
+			}
+			showError(errMsg);
 			passEl.value = '';
 			passEl.focus();
 		}).catch(function () {
